@@ -108,12 +108,18 @@ def category_subcategories(category_title, debug=False):
 			
 
 def main():
+	import csv
 	pages = category_pages(_sample_category_name, depth=2, debug=True)
 	all_revisions = []
 	for page in pages:
 		all_revisions += page_revisions(page, debug=True)
-	
-	return
+	csv_file = open(_sample_category_name + ".csv", "wb")
+	dw = csv.DictWriter(csv_file, 
+						['title', 'user', 'timestamp', 'revid'],
+						delimiter=',', 
+						quotechar='"')
+	dw.writerows(all_revisions)
+	csv_file.close()
 
 if __name__ == "__main__":
 	main()
