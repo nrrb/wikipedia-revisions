@@ -62,7 +62,7 @@ def category_pages(category_title, results_limit=500, recurse=False):
 	results = wikipedia_query(params)
 	pages = []
 	if 'categorymembers' in results.keys() and len(results['categorymembers']) > 0:
-		pages = [page['title'] for page in results]
+		pages = [page['title'] for page in results['categorymembers']]
 	return pages
 
 def category_subcategories(category_title, results_limit=500):
@@ -77,10 +77,10 @@ def category_subcategories(category_title, results_limit=500):
 				'cmtype': 'subcat',
 				'cmlimit': str(results_limit),
 				'cmsort': 'timestamp'}
-	results = wikitools_query(params)
+	results = wikipedia_query(params)
 	subcategories = []
 	if 'categorymembers' in results.keys() and len(results['categorymembers']) > 0:
-		subcategories = [category['title'] for category in results]
+		subcategories = [category['title'] for category in results['categorymembers']]
 	return subcategories
 			
 
