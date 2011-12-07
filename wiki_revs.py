@@ -145,7 +145,7 @@ class DictUnicodeWriter(object):
 def main():
 	pages = category_pages(_sample_category_name, depth=2, debug=True)
 	all_revisions = []
-	for page in pages[:2]:
+	for page in pages:
 		all_revisions += page_revisions(page, debug=True)
 	csv_file = open(_sample_category_name + ".csv", "wb")
 	# Below two line taken from http://stackoverflow.com/a/583881
