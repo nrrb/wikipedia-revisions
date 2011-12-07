@@ -1,4 +1,8 @@
 # coding: utf-8
+import csv
+import cStringIO
+import codecs
+
 _sample_article_name = 'Social_network'
 _sample_category_name = 'Category:21st-century_aviation_accidents_and_incidents'
 
@@ -45,8 +49,8 @@ def page_revisions(page_title, rvlimit=5000, debug=False):
 			seconds_since_epoch = calendar.timegm(py_timestamp.timetuple())
 			revisions[i] = {'title': page_title, 
 							'user': revision['user'], 
-							'timestamp': seconds_since_epoch, 
-							'revid': revision['revid']}
+							'timestamp': str(seconds_since_epoch), 
+							'revid': str(revision['revid'])}
 	return revisions
 
 def category_pages(category_title, depth=1, debug=False):
@@ -105,19 +109,53 @@ def category_subcategories(category_title, debug=False):
 			print "Found %d sub-categories!" % (len(results['categorymembers']))
 		subcategories = [category['title'] for category in results['categorymembers']]
 	return subcategories
-			
+		
 
+class DictUnicodeWriter(object):
+	"""
+	Code borrowed from http://stackoverflow.com/a/5838817
+	"""
+	def __init__(self, f, fieldnames, dialect=csv.excel, encoding="utf-8", **kwds):
+		# Redirect output to a queue
+		self.queue = cStringIO.StringIO()
+		self.writer = csv.DictWriter(self.queue, fieldnames, dialect=dialect, **kwds)
+		self.stream = f
+		self.encoder = codecs.getincrementalencoder(encoding)()
+
+	def writerow(self, D):
+		self.writer.writerow({k:v.encode("utf-8") for k,v in D.items()})
+		# Fetch UTF-8 output from the queue ...
+		data = self.queue.getvalue()
+		data = data.decode("utf-8")
+		# ... and reencode it into the target encoding
+		data = self.encoder.encode(data)
+		# write to the target stream
+		self.stream.write(data)
+		# empty queue
+		self.queue.truncate(0)
+	
+	def writerows(self, rows):
+		for D in rows:
+			self.writerow(D)
+	
+	def writeheader(self):
+		self.writer.writeheader()
+
+		
 def main():
-	import csv
 	pages = category_pages(_sample_category_name, depth=2, debug=True)
 	all_revisions = []
-	for page in pages:
+	for page in pages[:2]:
 		all_revisions += page_revisions(page, debug=True)
 	csv_file = open(_sample_category_name + ".csv", "wb")
-	dw = csv.DictWriter(csv_file, 
-						['title', 'user', 'timestamp', 'revid'],
-						delimiter=',', 
-						quotechar='"')
+	# Below two line taken from http://stackoverflow.com/a/583881
+	# BOM (optional...Excel needs it to open UTF-8 file properly)
+	csv_file.write(u'\ufeff'.encode('utf8'))
+	dw = DictUnicodeWriter(csv_file, 
+							['title', 'user', 'timestamp', 'revid'],
+							delimiter=',',
+							quotechar='"')
+	dw.writeheader()
 	dw.writerows(all_revisions)
 	csv_file.close()
 
