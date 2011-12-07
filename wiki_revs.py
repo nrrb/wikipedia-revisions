@@ -1,6 +1,6 @@
 # coding: utf-8
-sample_article_name = 'Social_network'
-sample_category_name = 'Category:21st_century'
+_sample_article_name = 'Social_network'
+_sample_category_name = 'Category:21st-century_aviation_accidents_and_incidents'
 
 def wikipedia_query(query_params):
 	"""
@@ -12,7 +12,7 @@ def wikipedia_query(query_params):
 	result = request.query()
 	return result[query_params['action']]
 
-def wiki_page_revisions(page_title, rvlimit=5000):
+def page_revisions(page_title, rvlimit=5000, debug=False):
 	"""
 	Given the proper name of a page on Wikipedia, this will return
 	basic identifying information all revisions. Each revision entry
@@ -23,6 +23,8 @@ def wiki_page_revisions(page_title, rvlimit=5000):
 	"""
 	import dateutil.parser
 	import calendar
+	if debug:
+		print "Getting revisions for page '%s'." % page_title
 	result = wikipedia_query({'action': 'query', 
 								'titles': page_title, 
 								'prop': 'revisions', 
@@ -32,6 +34,8 @@ def wiki_page_revisions(page_title, rvlimit=5000):
 		page_number = result['pages'].keys()[0]
 		revisions = result['pages'][page_number]['revisions']
 		revisions = sorted(revisions, key=lambda revision: revision['timestamp'])
+		if debug:
+			print "~~@ Found %d revisions." % len(revisions)
 		for i, revision in enumerate(revisions):
 			# The timestamp as supplied by wikitools is in the standard ISO 
 			# timestamp format. We may want to use this more flexibly in Python, 
@@ -45,46 +49,70 @@ def wiki_page_revisions(page_title, rvlimit=5000):
 							'revid': revision['revid']}
 	return revisions
 
-def category_pages(category_title, results_limit=500, recurse=False):
+def category_pages(category_title, depth=1, debug=False):
 	"""
 	Given the proper name of a category on Wikipedia, this will return
 	a list of all proper page titles (not categories) found within that
-	category. If 'recurse' is set to True, any subcategories of the
-	given category will also be explored and the pages belonging to 
-	those subcategories will also be returned. 
+	category. With 'depth' set to 1 (default), this will return only
+	the pages found immediately within the given category. If depth is
+	2, pages belonging to the subcategories will also be included.
+
+	*** Be very cautious with setting depth higher than 2, as the number
+	of pages and sub-categories grows exponentially with depth.
 	"""
 	params = {'action': 'query', 
 				'list': 'categorymembers', 
 				'cmtitle': category_title, 
 				'cmtype': 'page',
-				'cmlimit': str(results_limit),
-				'cmsort': 'timestamp'}
+				'cmlimit': '500'}
+	if debug:
+		print "Querying Wikipedia for sub-pages of '%s'..." % (category_title)
+		print "Depth = %d" % depth
 	results = wikipedia_query(params)
 	pages = []
 	if 'categorymembers' in results.keys() and len(results['categorymembers']) > 0:
+		if debug:
+			print "Found %d sub-pages!" % (len(results['categorymembers']))
 		pages = [page['title'] for page in results['categorymembers']]
+		if depth > 1:
+			subcategories = category_subcategories(category_title, debug=debug)
+			for subcategory in subcategories:
+				pages += category_pages(subcategory, depth=depth - 1, debug=debug)
+				if depth > 2:
+					subsubcategories = category_subcategories(subcategory, debug=debug)
+					for subsubcategory in subsubcategories:
+						if subsubcategory not in subcategories:
+							subcategories.append(subsubcategory)
 	return pages
 
-def category_subcategories(category_title, results_limit=500):
+def category_subcategories(category_title, debug=False):
 	"""
 	Given the proper name of a category on Wikipedia, this
-	will return a list of the titles only of all subcategories. If
-	there are no subcategories, the list returned is empty. 
+	will return a list of the titles only of all sub-categories. If
+	there are no sub-categories, the list returned is empty. 
 	"""
 	params = {'action': 'query',
 				'list': 'categorymembers',
 				'cmtitle': category_title,
 				'cmtype': 'subcat',
-				'cmlimit': str(results_limit),
-				'cmsort': 'timestamp'}
+				'cmlimit': '500'}
+	if debug:
+		print "Querying Wikipedia for sub-categories of '%s'..." % (category_title)
 	results = wikipedia_query(params)
 	subcategories = []
 	if 'categorymembers' in results.keys() and len(results['categorymembers']) > 0:
+		if debug:
+			print "Found %d sub-categories!" % (len(results['categorymembers']))
 		subcategories = [category['title'] for category in results['categorymembers']]
 	return subcategories
 			
 
 def main():
+	pages = category_pages(_sample_category_name, depth=2, debug=True)
+	all_revisions = []
+	for page in pages:
+		all_revisions += page_revisions(page, debug=True)
+	
 	return
 
 if __name__ == "__main__":
