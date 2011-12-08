@@ -1,7 +1,10 @@
 # coding: utf-8
+from wikitools import wiki, api
 import csv
 import cStringIO
 import codecs
+import dateutil.parser
+import calendar
 
 _sample_article_name = 'Social_network'
 _sample_category_name = 'Category:21st-century_aviation_accidents_and_incidents'
@@ -10,7 +13,6 @@ def wikipedia_query(query_params):
 	"""
 	An extremely basic wrapper for the wikitools api.
 	"""
-	from wikitools import wiki, api
 	site = wiki.Wiki() # This defaults to en.wikipedia.org
 	request = api.APIRequest(site, query_params)
 	result = request.query()
@@ -25,8 +27,6 @@ def page_revisions(page_title, rvlimit=5000, debug=False):
 	UNIX epoch - 1/1/1970), and the unique revision id for the
 	page.
 	"""
-	import dateutil.parser
-	import calendar
 	if debug:
 		print "Getting revisions for page '%s'." % page_title
 	result = wikipedia_query({'action': 'query', 
@@ -53,16 +53,42 @@ def page_revisions(page_title, rvlimit=5000, debug=False):
 							'revid': str(revision['revid'])}
 	return revisions
 
-def category_pages(category_title, depth=1, debug=False):
+def crawl_category(category_title, depth=1, debug=False):
+	"""
+	Given the proper name of a category on Wikipedia, this will return
+	a list comprised of the category given along with all sub-categories 
+	found therein. With a depth > 1, this will explore that many 
+	sublevels of sub-categories for each category found. 
+	"""
+	explored_categories = set()
+	categories_to_explore = set([category_title])
+	print repr(categories_to_explore)
+	while depth > 0:
+		subcategories = set()
+		for category in categories_to_explore:
+			if category not in explored_categories:
+#				print "Exploring category '%s'..." % category
+				new_subcategories = category_subcategories(category, debug=debug)
+				if debug:
+					print "Found %d subcategories of '%s':" % (len(new_subcategories), category)
+					for ns in new_subcategories:
+						print "  %s" % ns
+				subcategories.update(new_subcategories)
+#				categories_to_explore.remove(category)
+				explored_categories.add(category)
+			else:
+				if debug:
+					print "'%s' has already been explored!" % category
+				pass
+		categories_to_explore = set(subcategories)
+		depth = depth - 1
+	return list(explored_categories.union(categories_to_explore))
+
+def category_pages(category_title, debug=False):
 	"""
 	Given the proper name of a category on Wikipedia, this will return
 	a list of all proper page titles (not categories) found within that
-	category. With 'depth' set to 1 (default), this will return only
-	the pages found immediately within the given category. If depth is
-	2, pages belonging to the subcategories will also be included.
-
-	*** Be very cautious with setting depth higher than 2, as the number
-	of pages and sub-categories grows exponentially with depth.
+	category.
 	"""
 	params = {'action': 'query', 
 				'list': 'categorymembers', 
@@ -71,22 +97,12 @@ def category_pages(category_title, depth=1, debug=False):
 				'cmlimit': '500'}
 	if debug:
 		print "Querying Wikipedia for sub-pages of '%s'..." % (category_title)
-		print "Depth = %d" % depth
 	results = wikipedia_query(params)
 	pages = []
 	if 'categorymembers' in results.keys() and len(results['categorymembers']) > 0:
 		if debug:
 			print "Found %d sub-pages!" % (len(results['categorymembers']))
 		pages = [page['title'] for page in results['categorymembers']]
-		if depth > 1:
-			subcategories = category_subcategories(category_title, debug=debug)
-			for subcategory in subcategories:
-				pages += category_pages(subcategory, depth=depth - 1, debug=debug)
-				if depth > 2:
-					subsubcategories = category_subcategories(subcategory, debug=debug)
-					for subsubcategory in subsubcategories:
-						if subsubcategory not in subcategories:
-							subcategories.append(subsubcategory)
 	return pages
 
 def category_subcategories(category_title, debug=False):
@@ -143,11 +159,37 @@ class DictUnicodeWriter(object):
 
 		
 def main():
-	pages = category_pages(_sample_category_name, depth=2, debug=True)
+	category_name = ''
+	while category_name == '' or category_name.find("Category:") != 0:
+		category_name = raw_input("Enter a category name (include 'Category:' in the beginning): ")
+	category_depth = -1
+	while category_depth <= 0: 
+		try:
+			category_depth = int(raw_input("Enter a traversal depth (integer >= 1): "))
+		except ValueError:
+			print "Please enter an integer greater than or equal to 1."
+
+	# First we find all categories and sub-categories
+	all_categories = crawl_category(category_name, depth=category_depth, debug=True)			
+	
+	# Next we find all pages that exist in each of those category 
+	# pages, taking care to not duplicate pages (if they appear
+	# in more than one category at once)
+	pages = set()
+	for category in all_categories:
+		new_pages = category_pages(category, debug=True)
+		pages.update(new_pages)
+	pages = list(pages)
+	
+	# Next we get the revision history for each one of those pages
 	all_revisions = []
 	for page in pages:
 		all_revisions += page_revisions(page, debug=True)
-	csv_file = open(_sample_category_name + ".csv", "wb")
+	
+	# Now we dump it all to a CSV file with Unicode support
+	csv_filename = category_name + "-depth" + str(category_depth) + ".csv"
+	print "Writing revisions to file '%s'." % csv_filename
+	csv_file = open(csv_filename, "wb")
 	# Below two line taken from http://stackoverflow.com/a/583881
 	# BOM (optional...Excel needs it to open UTF-8 file properly)
 	csv_file.write(u'\ufeff'.encode('utf8'))
