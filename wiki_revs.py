@@ -18,17 +18,17 @@ def wikipedia_query(query_params):
 	result = request.query()
 	return result[query_params['action']]
 
-def page_revisions(page_title, rvlimit=5000, debug=False):
+def page_revisions(page_title, page_id=-1, rvlimit=5000, debug=False):
 	"""
-	Given the proper name of a page on Wikipedia, this will return
-	basic identifying information all revisions. Each revision entry
-	will inclue the original page title, the user who made the 
-	revision, the timestamp of the revision (in seconds since the
-	UNIX epoch - 1/1/1970), and the unique revision id for the
-	page.
+	Given a dictionary containing the title and pageid of a page 
+	on Wikipedia, this will return basic identifying information 
+	for all revisions. Each revision entry will inclue the 
+	original page title and pageid, the user who made the revision, the 
+	timestamp of the revision (in seconds since the UNIX epoch 
+	- 1/1/1970), and the unique revision id for the page.
 	"""
 	if debug:
-		print "Getting revisions for page '%s'." % page_title
+		print "Getting revisions for page '%s' (%d)." % (page_title, page_id)
 	result = wikipedia_query({'action': 'query', 
 								'titles': page_title, 
 								'prop': 'revisions', 
@@ -50,7 +50,9 @@ def page_revisions(page_title, rvlimit=5000, debug=False):
 			if 'userhidden' in revision.keys():
 				revision['user'] = "userhidden"
 			revisions[i] = {'title': page_title, 
+							'pageid': str(page_id),
 							'user': revision['user'], 
+							'userid': '',
 							'timestamp': str(seconds_since_epoch), 
 							'revid': str(revision['revid'])}
 	return revisions
@@ -104,7 +106,7 @@ def category_pages(category_title, debug=False):
 	if 'categorymembers' in results.keys() and len(results['categorymembers']) > 0:
 		if debug:
 			print "Found %d sub-pages!" % (len(results['categorymembers']))
-		pages = [page['title'] for page in results['categorymembers']]
+		pages = [{'title': page['title'], 'pageid': page['pageid']} for page in results['categorymembers']]
 	return pages
 
 def category_subcategories(category_title, debug=False):
@@ -176,18 +178,17 @@ def main():
 	all_categories = crawl_category(category_name, depth=category_depth, debug=True)			
 	
 	# Next we find all pages that exist in each of those category 
-	# pages, taking care to not duplicate pages (if they appear
-	# in more than one category at once)
-	pages = set()
+	# pages
+	pages = []
 	for category in all_categories:
 		new_pages = category_pages(category, debug=True)
-		pages.update(new_pages)
-	pages = list(pages)
+		pages += new_pages
 	
 	# Next we get the revision history for each one of those pages
 	all_revisions = []
 	for page in pages:
-		all_revisions += page_revisions(page, debug=True)
+		all_revisions += page_revisions(page_title=page['title'], 
+										page_id=page['pageid'], debug=True)
 	
 	# Now we dump it all to a CSV file with Unicode support
 	csv_filename = category_name + "-depth" + str(category_depth) + ".csv"
@@ -197,7 +198,7 @@ def main():
 	# BOM (optional...Excel needs it to open UTF-8 file properly)
 	csv_file.write(u'\ufeff'.encode('utf8'))
 	dw = DictUnicodeWriter(csv_file, 
-							['title', 'user', 'timestamp', 'revid'],
+							['pageid', 'userid', 'title', 'user', 'timestamp', 'revid'],
 							delimiter=',',
 							quotechar='"')
 #	dw.writeheader()
