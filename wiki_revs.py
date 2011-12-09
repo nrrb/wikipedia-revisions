@@ -164,7 +164,7 @@ def main():
 	category_name = ''
 	while category_name == '':
 		category_name = raw_input("Enter a category name: ")
-	category_name = "Category:" + category_name
+	category_name = unicode("Category:" + category_name)
 	category_depth = -1
 	while category_depth <= 0: 
 		try:
@@ -200,7 +200,7 @@ def main():
 							['title', 'user', 'timestamp', 'revid'],
 							delimiter=',',
 							quotechar='"')
-	dw.writeheader()
+#	dw.writeheader()
 	dw.writerows(all_revisions)
 	csv_file.close()
 
