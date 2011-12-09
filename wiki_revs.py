@@ -47,6 +47,8 @@ def page_revisions(page_title, rvlimit=5000, debug=False):
 			iso_timestamp = revision['timestamp']
 			py_timestamp = dateutil.parser.parse(iso_timestamp)
 			seconds_since_epoch = calendar.timegm(py_timestamp.timetuple())
+			if 'userhidden' in revision.keys():
+				revision['user'] = "userhidden"
 			revisions[i] = {'title': page_title, 
 							'user': revision['user'], 
 							'timestamp': str(seconds_since_epoch), 
@@ -160,8 +162,9 @@ class DictUnicodeWriter(object):
 		
 def main():
 	category_name = ''
-	while category_name == '' or category_name.find("Category:") != 0:
-		category_name = raw_input("Enter a category name (include 'Category:' in the beginning): ")
+	while category_name == '':
+		category_name = raw_input("Enter a category name: ")
+	category_name = "Category:" + category_name
 	category_depth = -1
 	while category_depth <= 0: 
 		try:
