@@ -32,6 +32,7 @@ def page_revisions(page_title, page_id=-1, rvlimit=5000, debug=False):
 	result = wikipedia_query({'action': 'query', 
 								'titles': page_title, 
 								'prop': 'revisions', 
+								'rvprop': 'ids|timestamp|user|userid',
 								'rvlimit': str(rvlimit)})
 	revisions = []
 	if result and 'pages' in result.keys():
@@ -49,10 +50,16 @@ def page_revisions(page_title, page_id=-1, rvlimit=5000, debug=False):
 			seconds_since_epoch = calendar.timegm(py_timestamp.timetuple())
 			if 'userhidden' in revision.keys():
 				revision['user'] = "userhidden"
+			if revision['userid'] == 0 and 'anon' in revision.keys():
+				# Then we'll take the user, which contains an IP address,
+				# and re-format it from vvv.xxx.yyy.zzz to 
+				# vvvxxxyyyzzz0000000000
+				ip = revision['user']
+				revision['userid'] = ''.join(['0'*(3-len(octet))+octet for octet in ip.split('.')]) + "0000000000"
 			revisions[i] = {'title': page_title, 
 							'pageid': str(page_id),
 							'user': revision['user'], 
-							'userid': '',
+							'userid': str(revision['userid']),
 							'timestamp': str(seconds_since_epoch), 
 							'revid': str(revision['revid'])}
 	return revisions
