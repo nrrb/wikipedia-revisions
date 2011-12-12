@@ -50,7 +50,8 @@ def page_revisions(page_title, page_id=-1, rvlimit=5000, debug=False):
 			seconds_since_epoch = calendar.timegm(py_timestamp.timetuple())
 			if 'userhidden' in revision.keys():
 				revision['user'] = "userhidden"
-			if revision['userid'] == 0 and 'anon' in revision.keys():
+				revision['userid'] = ''
+			if 'userid' in revision.keys() and revision['userid'] == 0 and 'anon' in revision.keys():
 				# Then we'll take the user, which contains an IP address,
 				# and re-format it from vvv.xxx.yyy.zzz to 
 				# vvvxxxyyyzzz0000000000
@@ -73,7 +74,7 @@ def crawl_category(category_title, depth=1, debug=False):
 	"""
 	explored_categories = set()
 	categories_to_explore = set([category_title])
-	print repr(categories_to_explore)
+#	print repr(categories_to_explore)
 	while depth > 0:
 		subcategories = set()
 		for category in categories_to_explore:
@@ -189,8 +190,10 @@ def main():
 	pages = []
 	for category in all_categories:
 		new_pages = category_pages(category, debug=True)
-		pages += new_pages
-	
+		for page in new_pages:
+			if page not in pages:
+				pages.append(page)
+
 	# Next we get the revision history for each one of those pages
 	all_revisions = []
 	for page in pages:
