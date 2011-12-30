@@ -1,0 +1,27 @@
+# The syntax for wikirevs.py's input file is composed of a list of articles and category 
+# pages on Wikipedia, each on a separate line. Article and Category names should be 
+# exactly as they appear in the respective URL. For example:
+# 
+# Upper-atmospheric_lightning  (Article URL: http://en.wikipedia.org/wiki/Upper-atmospheric_lightning)
+# 2009_earthquakes (Article URL: http://en.wikipedia.org/wiki/2009_earthquakes)
+# Category:2009_earthquakes (Category URL: http://en.wikipedia.org/wiki/Category:2009_earthquakes)
+# Category:21st-century_earthquakes (Category URL: http://en.wikipedia.org/wiki/Category:21st-century_earthquakes)
+#
+# Note that a name must be prefixed with "Category:" for it to be considered a category
+# by the script to avoid confusion. 
+#
+# -Exclusions
+# A name can be prefixed with a '-' character to indicate that this article or category should be 
+# excluded from all results. 
+#
+# How exclusions work
+# Given the name of a category and a numeric depth (0, 1, 2, ...), this script will recursively explore 
+# that category and its subcategories (if they exist) and collect a list of all articles that are contained
+# in each category. 
+# 
+# With a default depth of 0, only the immediate articles belonging to the given category
+# will be retrieved. With a depth of 1, all sub-categories of the main category would each be explored 
+# and all of their pages collected into one list with duplicates removed. 
+# 
+# With more than one category given in this input file, the script will explore each of them to the 
+# single depth value specified at the command-line. 
