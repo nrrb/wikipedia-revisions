@@ -1,4 +1,5 @@
 from wikitools import wiki, api
+import argparse
 import dateutil.parser
 import calendar
 import shutil
@@ -56,11 +57,7 @@ class WikiCategory:
 
 	def all_articles(self):
 		articles = set()
-#		if not self.are_articles_loaded:
-#			self.load_articles()
 		articles.update([a for a in self.articles if not a.excluded])
-#		if not self.are_subcategories_loaded:
-#			self.load_subcategories()
 		for category in self.subcategories:
 			if not category.excluded:
 				articles.update(category.all_articles())
@@ -85,9 +82,9 @@ class WikiCategory:
 					'cmlimit': '500'}
 		results = wikipedia_query(params)
 		if 'categorymembers' in results.keys() and len(results['categorymembers']) > 0:
-			print "(%dP) %s" % (len(results['categorymembers']), self.page_title)
+#			print "(%dP) %s" % (len(results['categorymembers']), self.page_title)
 			for i, page in enumerate(results['categorymembers']):
-				print "\t%d. %s" % (i+1, page['title'])
+#				print "\t%d. %s" % (i+1, page['title'])
 				self.articles.append(WikiArticle(page_title=page['title'],
 												page_id=page['pageid']))
 		self.are_articles_loaded = True
@@ -101,9 +98,9 @@ class WikiCategory:
 		results = wikipedia_query(params)
 		subcategories = []
 		if 'categorymembers' in results.keys() and len(results['categorymembers']) > 0:
-			print "(%dC) %s" % (len(results['categorymembers']), self.page_title)
+#			print "(%dC) %s" % (len(results['categorymembers']), self.page_title)
 			for i, category in enumerate(results['categorymembers']):
-				print "\t%d. %s" %(i+1, category['title'])
+#				print "\t%d. %s" %(i+1, category['title'])
 				self.subcategories.append(WikiCategory(page_title=category['title']))
 			self.are_subcategories_loaded = True
 				
@@ -139,7 +136,7 @@ class WikiArticle:
 			page_number = result['pages'].keys()[0]
 			revisions = result['pages'][page_number]['revisions']
 			revisions = sorted(revisions, key=lambda revision: revision['timestamp'])
-			print "(%dR) %s" % (len(revisions), self.page_title)
+#			print "(%dR) %s" % (len(revisions), self.page_title)
 			for i, revision in enumerate(revisions):
 				# The timestamp as supplied by wikitools is in the standard ISO 
 				# timestamp format. We may want to use this more flexibly in Python, 
@@ -265,6 +262,62 @@ def RunProgram():
 	else:
 		print "There was nothing there!"
 
+def process_arguments():
+	parser = argparse.ArgumentParser(description='Retrieve revision information for Wikipedia article(s).')
+	parser.add_argument('-c', '--category', metavar='category_title', dest='category',
+						help='The name of a Wikipedia category (e.g. Category:2009_earthquakes).')
+	parser.add_argument('-a', '--article', metavar='article_title', dest='article',
+						help='The name of a Wikipedia article (e.g. 2009_Bhutan_earthquake).')
+	parser.add_argument('-i', '--input', metavar='input_filename', dest='infilename',
+						help='Name of input file a list of articles and categories, one per line.')
+	parser.add_argument('-d', '--depth', metavar='depth', dest='depth', default=0,
+						help='The crawling depth for the given category, integer >= 0. Default is 0.')
+	parser.add_argument('-xc', metavar='excluded_categories', dest='excluded_categories',
+						help='A list of categories to exclude from the results, separated by commas (e.g. Category:a,Category:b).')
+	parser.add_argument('-xa', metavar='excluded_articles', dest='excluded_articles', 
+						help='A list of articles to exclude from the results, separated by commas (e.g. article1,article2).')
+	parser.add_argument('-xf', metavar='exclusions_filename', dest='exclusions_filename',
+						help='Name of file containing list of articles and/or categories, one per line, to exclude from the results.')
+	parser.add_argument('-o', '--output', metavar='output_filename', dest='outfilename', required=True,
+						help='Name of output CSV file. *REQUIRED*')
+	args = parser.parse_args()	
+	if not (args.infilename or args.article or args.category):
+		parser.exit(status=-1, message='At least one form of input (article, category, or infile) is needed!\n')
+	articles = []
+	categories = []
+	excluded_articles = []
+	excluded_categories = []
+	if args.excluded_articles:
+		excluded_articles = args.excluded_articles.split(',')
+	if args.excluded_categories:
+		excluded_categories = args.excluded_categories.split(',')
+	if args.exclusions_filename:
+		with open(args.exclusions_filename, 'rb') as exclusions_file:
+			titles = exclusions_file.readlines()
+		for title in titles:
+			if title.find('Category:')==0:
+				excluded_categories.append(title.rstrip())
+			else:
+				excluded_articles.append(title.rstrip())
+	if args.article:
+		articles.append(args.article)
+	if args.category:
+		categories.append(args.category)
+	if args.infilename:
+		titles = []
+		with open(args.infilename, 'rb') as infile:	
+			titles = infile.readlines()
+		for title in titles:
+			if title.find('Category:')==0:
+				categories.append(title.rstrip())
+			else:
+				articles.append(title.rstrip())
+	articles = list(set(articles))
+	categories = list(set(categories))
+	return (articles, categories, excluded_articles, excluded_categories, depth, outfilename)
 
 if __name__=='__main__':
-	RunProgram()
+	articles, categories, excluded_articles, excluded_categories, depth, outfilename = get_arguments()
+	all_articles = articles[:]
+	for category in categories:
+		
