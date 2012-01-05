@@ -48,7 +48,7 @@ def process_arguments():
 	parser = argparse.ArgumentParser(description='Retrieve revision information for Wikipedia article(s).')
 	parser.add_argument('-title', metavar='title', dest='title',
 						help='The name of a Wikipedia article or category (e.g. Upper-atmospheric_lightning or Category:Lightning).')
-	parser.add_argument('-output', metavar='output_path', dest='output_file', type=argparse.FileType('wb'), required=True,
+	parser.add_argument('-output', metavar='output_path', dest='output_file', type=argparse.FileType('a'), required=True,
 						help='Full path to output CSV file (e.g. /home/nick/Documents/lightning.csv).')
 	optional = parser.add_argument_group('Optional arguments for when a CATEGORY is specified:')
 	optional.add_argument('-depth', metavar='depth', dest='depth', type=int, default=0,
@@ -64,9 +64,16 @@ def process_arguments():
 		args['article'] = args['title']
 	return args
 
-if __name__=="__main__":
-	# Process input
-	args = process_arguments()
+def main(args):
+	'''
+	Input: dictionary with following keys:
+		'title' - the title of the article or category to be scraped
+		'article' - if 'title' represents an article, this is defined by that title
+		'category' - if 'title' represents a category, this is defined by that title
+		'depth' - integer
+		'exclusions' - list of category or article names (strings) to exclude
+		'output_file' - file object, where revisions should be written
+	'''
 	# Assemble the list of all articles, plural if a category was given and we must crawl
 	articles = []
 	if 'article' in args:
@@ -86,3 +93,7 @@ if __name__=="__main__":
 				args['output_file'])	
 	# Done.
 	args['output_file'].close()
+
+if __name__=="__main__":
+	args = process_arguments()
+	main(args)
