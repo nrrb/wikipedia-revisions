@@ -1,0 +1,8 @@
+# Syntax:
+#
+# $ python wikirevs.py -a/--article article_name -o/--output /path/filename.csv
+# $ python wikirevs.py -c/--category category_name -o/--output /path/filename.csv [-d/--depth N -x/--exclude article1,article2,Category:three]
+# 
+# The depth parameter defaults to 0 if not specified. 
+#
+# aAnother script can merge multiple CSV files to a single CSV with duplicate entries removed. 

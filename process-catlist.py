@@ -23,12 +23,15 @@ def main():
 	args['category_file'].close()
 	exclusions = args['exclude_file'].readlines()
 	args['exclude_file'].close()
-	categories = [unicode(cat.rstrip()) for cat in categories]
-	exclusions = [unicode(ex.rstrip()) for ex in exclusions]
+	for i,cat in enumerate(categories):
+		categories[i] = cat.rstrip().decode('UTF-8')
+		print categories[i]
+#	categories = [cat.rstrip().decode(category_encoding) for cat in categories]
+	exclusions = [ex.rstrip().decode('UTF-8') for ex in exclusions]
 	depth = args['depth']
 	for category in categories:
 		print 'Processing "%s".' % (category)
-		output_filename = category.replace(':', '-') + '.csv'
+		output_filename = category.encode('UTF-8').replace(':', '-') + '.csv'
 		output_file = open(output_filename, 'wb')
 		wikicrawl.main(dict(title=category, 
 							category=category, 
