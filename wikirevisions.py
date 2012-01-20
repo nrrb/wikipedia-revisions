@@ -1,16 +1,38 @@
+from pprint import pprint as pp
 from wikitools import wiki, api
+import random
 import dateutil.parser
+import codecs
 import calendar
-import csv
-from cStringIO import StringIO
-from codecs import getincrementalencoder
 import argparse
 import inspect
+import re
 
 _DEPTH = 10 # Crossing our fingers that this doesn't break the Internet
 _FIELDORDER = [u'page_id', u'userid', u'page_title', u'user', u'timestamp', u'revid', u'size']
 _ENCODING = 'UTF-8'
+_CSV_QUOTECHAR = u'"'
+_CSV_DELIMITER = u','
+_CSV_ENDLINE = u'\r\n'
 
+def is_ip(ip_string, masked=False):
+	# '''
+	# Input:
+	# ip_string - A string we'd like to check if it matches the pattern of a valid IP address.
+	# Output:
+	# A boolean value indicating whether the input was a valid IP address.
+	# '''
+	if not isinstance(ip_string, str) and not isinstance(ip_string, unicode):
+		return False
+	if masked:
+		ip_pattern = re.compile('((([\d]{1,3})|([Xx]{1,3}))\.){3}(([\d]{1,3})|([Xx]{1,3}))', re.UNICODE)
+	else:
+		ip_pattern = re.compile('([\d]{1,3}\.){3}([\d]{1,3})', re.UNICODE)
+	if ip_pattern.match(ip_string):
+		return True
+	else:
+		return False
+    
 def parse_arguments():
 	parser = argparse.ArgumentParser(description='Batch processing of crawling Wikipedia categories.')
 	parser.add_argument('-categoryfile', metavar='filename', dest='category_file', type=argparse.FileType('r'), required=True,
@@ -21,47 +43,28 @@ def parse_arguments():
 						help='The crawling depth for the categories, integer >= 0. Default is %d.' % (_DEPTH))
 	args = parser.parse_args()
 	# We want to convert this from a Namespace to a dict and ignore the hidden attributes
-	args = dict([(k, v) for k,v in inspect.getmembers(args) if k.find('_')!=0])
+	args = dict([(k, v) for k, v in inspect.getmembers(args) if k.find('_') != 0])
 	return args
 
-def write_csv(revisions, field_order, output_file, include_header=False):	
-	class DictUnicodeWriter(object):
-		"""
-		Code borrowed from http://stackoverflow.com/a/5838817
-		"""
-		def __init__(self, f, fieldnames, dialect=csv.excel, encoding=_ENCODING, **kwds):
-			# Redirect output to a queue
-			self.queue = StringIO()
-			self.writer = csv.DictWriter(self.queue, fieldnames, dialect=dialect, **kwds)
-			self.stream = f
-			self.encoder = getincrementalencoder(encoding)()
-		def writerow(self, D):
-			self.writer.writerow(dict((k, v.encode(_ENCODING)) for k,v in D.iteritems()))
-			# Fetch UTF-8 output from the queue ...
-			data = self.queue.getvalue()
-			data = data.decode(_ENCODING)
-			# ... and reencode it into the target encoding
-			data = self.encoder.encode(data)
-			# write to the target stream
-			self.stream.write(data)
-			# empty queue
-			self.queue.truncate(0)
-		def writerows(self, rows):
-			for D in rows:
-				self.writerow(D)
-		def writeheader(self):
-			self.writer.writeheader()
-	dw = DictUnicodeWriter(output_file, 
-						field_order,
-						delimiter=',',
-						quotechar='"')
-	if include_header:
-		dw.writeheader()
-	for revision in revisions:
-		for k, v in revision.items():
-			# Some of these are integers and need to be converted to strings for the CSV writer
-			revision[k] = unicode(v)
-		dw.writerow(revision)
+def write_csv(revisions, field_order, output_file, all_fields=False):
+	# For each revision, we'll assume that its keys contain at least the members
+	# of the list field_order. These values will then be printed in the order
+	# specified by the field_order list. If the revision contains any other 
+	# keys, those will be printed in arbitrary order (consistent within each
+	# file though) after the specified fields. 
+	with output_file as f:
+		for revision in revisions:
+			line = ''
+			def wrap(x):
+				return unicode(_CSV_QUOTECHAR + unicode(x) + _CSV_QUOTECHAR + _CSV_DELIMITER + ' ')
+			for field in field_order:
+				line += wrap(revision[field])
+			f.write(line)
+			if all_fields:
+				other_fields = set(revision.keys()).difference(set(field_order))
+				for field in other_fields:
+					line += wrap(revision[field])
+			f.write(_CSV_ENDLINE)
 
 def iso_time_to_epoch(iso_timestamp):
 	py_timestamp = dateutil.parser.parse(iso_timestamp)
@@ -90,7 +93,6 @@ def category_articles(category_name, excluded=[], depth=_DEPTH):
 		the keys 'title' and 'id' with the values of the individual article's title and 
 		page_id respectively. 
 	'''
-	#print 'Exploring %s' % (category_name)
 	articles = []
 	if category_name in excluded:
 		return articles
@@ -144,60 +146,141 @@ def article_revisions(article, revision_properties=['ids', 'timestamp', 'user', 
 		r = result['pages'][page_number]['revisions']
 		r = sorted(r, key=lambda revision: revision['timestamp'])
 		for i, revision in enumerate(r):
-			revision[u'page_title'] = article['title']
-			revision[u'page_id'] = article['id']
+			revision['page_title'] = article['title']
+			revision['page_id'] = article['id']
+			# Sometimes the size key is not present, so we'll set it to 0 in those cases
+			revision['size'] = revision.get('size', 0)
 			# The timestamp as supplied by wikitools is in the standard ISO 
 			# timestamp format. We may want to use this more flexibly in Python, 
 			# so we'll convert it to number of seconds since the UNIX epoch.
-			seconds_since_epoch = iso_time_to_epoch(revision['timestamp'])
-			revision[u'timestamp'] = seconds_since_epoch
+			revision['timestamp'] = iso_time_to_epoch(revision['timestamp'])
 			revisions.append(revision)
 	return revisions	
 
-def main():
-	args = parse_arguments()
-	categories = args['category_file'].readlines()
-	args['category_file'].close()
-	exclusions = args['exclude_file'].readlines()
-	args['exclude_file'].close()
-	for i,cat in enumerate(categories):
-		categories[i] = cat.rstrip().lstrip().decode(_ENCODING)
-	exclusions = [ex.rstrip().lstrip().decode(_ENCODING) for ex in exclusions]
-	depth = args['depth']
+def random_string(le, letters=True, numerals=False):
+	def rc():
+		charset = []
+		cr = lambda x,y: range(ord(x), ord(y) + 1)
+		if letters:
+			charset += cr('a', 'z')
+		if numerals:
+			charset += cr('0', '9')
+		return chr(random.choice(charset))
+	def rcs(k):
+		return [rc() for i in range(k)]
+	return ''.join(rcs(le))
+
+def clean_revision(rev):
+	# We must deal with some malformed user/userid values. Some 
+	# revisions have the following problems:
+	# 1. no 'user' or 'userid' keys and the existence of the 'userhidden' key
+	# 2. 'userid'=='0' and 'user'=='Conversion script' and 'anon'==''
+	# 3. 'userid'=='0' and 'user'=='66.92.166.xxx' and 'anon'==''
+	# 4. 'userid'=='0' and 'user'=='204.55.21.34' and 'anon'==''
+	# In these cases, we must substitute a placeholder value
+	# for 'userid' to uniquely identify the respective kind
+	# of malformed revision as above. 
+	revision = rev.copy()
+	if 'userhidden' in revision:
+		revision['user'] = random_string(15, letters=False, numerals=True)
+		revision['userid'] = revision['user']
+	elif 'anon' in revision:
+		if revision['user']=='Conversion script':
+			revision['user'] = random_string(14, letters=False, numerals=True)
+			revision['userid'] = revision['user']
+		elif is_ip(revision['user']):
+			# Just leaving this reflection in for consistency
+			revision['user'] = revision['user']
+			# The weird stuff about multiplying '0' by a number is to 
+			# make sure that IP addresses end up looking like this:
+			# 192.168.1.1 -> 192168001001
+			# This serves to prevent collisions if the numbers were
+			# simply joined by removing the periods:
+			# 215.1.67.240 -> 215167240
+			# 21.51.67.240 -> 215167240
+			# This also results in the number being exactly 12 decimal digits.
+			revision['userid'] = ''.join(['0' * (3 - len(octet)) + octet \
+											for octet in revision['user'].split('.')])
+		elif is_ip(revision['user'], masked=True):
+			# Let's distinguish masked IP addresses, like
+			# 192.168.1.xxx or 255.XXX.XXX.XXX, by setting 
+			# 'user'/'userid' both to a random 13 digit number
+			# or 13 character string. 
+			# This will probably be unique and easily 
+			# distinguished from an IP address (with 12 digits
+			# or characters). 
+			revision['user'] = random_string(13, letters=False, numerals=True)
+			revision['userid'] = revision['user']
+	return revision
+
+def main(categories, exclusions, depth=_DEPTH, testing=False):
+	if not testing:
+		args = parse_arguments()
+		categories = args['category_file'].readlines()
+		args['category_file'].close()
+		exclusions = args['exclude_file'].readlines()
+		args['exclude_file'].close()
+		for i,cat in enumerate(categories):
+			categories[i] = cat.rstrip().lstrip().decode(_ENCODING)
+		exclusions = [ex.rstrip().lstrip().decode(_ENCODING) for ex in exclusions]
+		depth = args['depth']
+	if testing:		
+		all_revisions = []
 	for category in categories:
-		print 'Processing "%s".' % (category)
+		print '%s' % (category.encode(_ENCODING))
 		output_filename = category.encode(_ENCODING).replace(':', '-') + '.csv'
 		articles = category_articles(category, excluded=exclusions, depth=depth)
 		revisions = []
 		for article in articles:
 			revisions += article_revisions(article)
-		############################################################
-		# Here's where we fix the malformed user/userid values
+		# Check for bad 'user'/'userid' values and correct them
 		for i in xrange(len(revisions)):
-			revision = revisions[i]
-			if 'userhidden' in revision:
-				revision['user'] = 'userhidden'
-				revision['userid'] = ''
-			if 'userid' in revision and revision['userid']==0 and 'anon' in revision:
-				# Then we'll take the user, which contains an IP address,
-				# and re-format it from vvv.xxx.yyy.zzz to 
-				# vvvxxxyyyzzz0000000000
-				ip = revision['user']
-				revision['userid'] = ''.join(['0'*(3-len(o))+o for o in ip.split('.')]) + '0'*10				
-		############################################################
-			# Remove the extraneous keys
-			revision = dict((k, v) for k, v in revision.iteritems() if k in _FIELDORDER)
-			revisions[i] = revision
-		with open(output_filename, 'w') as output_file:
-			write_csv(revisions, _FIELDORDER, output_file)
+			revisions[i] = clean_revision(revisions[i])
+		if testing:
+			all_revisions += revisions
+		with codecs.open(output_filename, 'w', _ENCODING) as output_file:
+		 	# Rollin' up my sleeves and writing my own CSV outputter thingy
+		 	write_csv(revisions, _FIELDORDER, output_file, all_fields=True)
+	if testing:
+		return all_revisions
 
 def test():
-	from pprint import pprint
 	articles = category_articles('Category:2001_fires')
-	revisions = article_revisions(articles[0])
-	pprint(revisions[0])
-	return revisions
+	r = []
+	for a in articles:
+		r += article_revisions(a)
+	pp([(rev['user'], rev['userid'], is_ip(rev['user'])) for rev in r[:10]])
+	return r
 
 if __name__=="__main__":
 	main()
 
+################################################################################
+########################################################### Utility Functions ##
+## Utility Functions ###########################################################
+################################################################################
+
+# To find a list of unique keys from a list of dictionary objects:
+
+def uniq_keys(list_dicts):
+    return list(set([k for d in list_dicts for k in d.keys()]))
+
+# To find a list of unique keys from a list of dictionary objects, in a dictionary 
+# with counts of how many objects had a given key. 
+
+def uniqc_keys(list_dicts):
+	all_keys = [k for d in list_dicts for k in d.keys()]
+	unique_keys = list(set(all_keys))
+	counts = [all_keys.count(key) for key in unique_keys]
+	return dict(zip(unique_keys, counts))
+
+# To find the list of unique elements in a list:
+
+def uniq(L):
+	return list(set(L))
+
+# To get a list of tuples with the unique elements as the first value and 
+# the count of that element in the original list as the second value:
+
+def uniqc(L):
+	return zip(uniq(L), [L.count(x) for x in uniq(L)])
