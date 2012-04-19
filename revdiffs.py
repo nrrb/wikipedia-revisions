@@ -38,39 +38,43 @@ def find_revision(revid, pageid):
 	q = session.query(Revision).filter(Revision.pageid==pageid).filter(Revision.revid==revid)
 	return q.all()
 
-def store_revision(rev_json):
-	page_id = rev_json['query']['pages'].keys()[0]
-	page_info = rev_json['query']['pages'][page_id]
-	rev = page_info['revisions'][0]
-	revision = Revision(pageid = page_id,
+def store_revisions(revs_json, pageid):
+	# Up to ['query']['pages']
+	page_info = revs_json[str(pageid)]
+	if 'revisions' not in page_info:
+		return 0
+	for revision in page_info['revisions']:
+		revid = revision['revid']
+		parentid = revision['parentid']
+		revobj = Revision(pageid = pageid,
 		article_title = page_info['title'],
-		editor_id = rev['userid'],
-		editor_name = rev['user'],
-		revid = rev['revid'],
-		parentid = rev['parentid'],
-		timestamp = rev['timestamp'],
-		comment = rev['comment'],
-		diff = rev['diff']['*'])
-	if len(find_revision(rev['revid'], int(page_id))) == 0:
-		session.add(revision)
-	else:
-		print 'pageid=%d,revid=%d already exists in database, skipping.'%(int(page_id), rev['revid'])
-	return rev['parentid']
+		editor_id = revision['userid'],
+		editor_name = revision['user'],
+		revid = revid,
+		parentid = parentid,
+		timestamp = revision['timestamp'],
+		comment = revision.get('comment', ''),
+		diff = revision['diff']['*'])
+		if len(find_revision(revid, pageid)) == 0:
+			session.add(revobj)
+		else:
+			print 'pageid=%d,revid=%d already exists in database, skipping.'%(pageid, revid)
+	return parentid
 
-def get_revision(revid, pageid):
-	request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids%7Ctimestamp%7Cuser%7Cuserid%7Ccomment%7Ccontent&rvlimit=1&rvdiffto=prev&rvstartid='+str(revid)+'&pageids='+str(pageid)
+def get_revisions(revid, pageid):
+	request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids%7Ctimestamp%7Cuser%7Cuserid%7Ccomment%7Ccontent&rvlimit=10&rvdiffto=prev&rvstartid='+str(revid)+'&pageids='+str(pageid)
 	r = requests.get(request)
 	sj = simplejson.loads(r.text)
-	return sj
+	results = sj['query']['pages']
+	return results
 
 if __name__=="__main__":
 	for pageid in pageids:
 		first_request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids%7Ctimestamp%7Cuser%7Cuserid%7Ccomment%7Ccontent&rvlimit=1&rvdiffto=prev&pageids='+str(pageid)
 		r = requests.get(first_request)
 		sj = simplejson.loads(r.text)
-		next_revid = store_revision(sj)
+		next_revid = store_revisions(sj['query']['pages'], pageid)
 		while next_revid != 0:
-			print 'Getting revision %d for pageid %d (%s)' % (next_revid, pageid, pageids[pageid])
-			sj = get_revision(next_revid, pageid)
-			next_revid = store_revision(sj)
+			revisions = get_revisions(next_revid, pageid)
+			next_revid = store_revisions(revisions, pageid)
 			session.commit()
