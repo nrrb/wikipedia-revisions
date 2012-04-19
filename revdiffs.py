@@ -34,6 +34,10 @@ metadata = Base.metadata
 Session = sessionmaker(bind=engine)
 session = Session()
 
+def find_revision(revid, pageid):
+	q = session.query(Revision).filter(Revision.pageid==pageid).filter(Revision.revid==revid)
+	return q.all()
+
 def store_revision(rev_json):
 	page_id = rev_json['query']['pages'].keys()[0]
 	page_info = rev_json['query']['pages'][page_id]
@@ -47,7 +51,10 @@ def store_revision(rev_json):
 		timestamp = rev['timestamp'],
 		comment = rev['comment'],
 		diff = rev['diff']['*'])
-	session.add(revision)
+	if len(find_revision(rev['revid'], page_id)) == 0:
+		session.add(revision)
+	else:
+		print 'pageid=%d,revid=%d already exists in database, skipping.'%(page_id, rev['revid'])
 	return rev['parentid']
 
 def get_revision(revid, pageid):
@@ -62,8 +69,7 @@ if __name__=="__main__":
 		r = requests.get(first_request)
 		sj = simplejson.loads(r.text)
 		next_revid = store_revision(sj)
-		#while next_revid 
-		while True:
+		while next_revid != 0:
 			print 'Getting revision %d for pageid %d (%s)' % (next_revid, pageid, pageids[pageid])
 			sj = get_revision(next_revid, pageid)
 			next_revid = store_revision(sj)
