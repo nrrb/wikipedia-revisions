@@ -1,4 +1,4 @@
-from pprint import pprint as pp
+
 from wikitools import wiki, api
 import random
 import dateutil.parser
@@ -35,11 +35,11 @@ def is_ip(ip_string, masked=False):
     
 def parse_arguments():
 	parser = argparse.ArgumentParser(description='Batch processing of crawling Wikipedia categories.')
-	parser.add_argument('-categoryfile', metavar='filename', dest='category_file', type=argparse.FileType('r'), required=True,
+	parser.add_argument('-c', metavar='filename', dest='category_file', type=argparse.FileType('r'), required=True,
 						help='The name of a text file containing a list of Wikipedia categories to crawl.')
-	parser.add_argument('-excludefile', metavar='filename', dest='exclude_file', type=argparse.FileType('r'),
+	parser.add_argument('-x', metavar='filename', dest='exclude_file', type=argparse.FileType('r'),
 						help='The name of a text file containing a list of Wikipedia categories and/or articles to exclude from crawling.')
-	parser.add_argument('-depth', metavar='depth', dest='depth', type=int, default=_DEPTH,
+	parser.add_argument('-d', metavar='depth', dest='depth', type=int, default=_DEPTH,
 						help='The crawling depth for the categories, integer >= 0. Default is %d.' % (_DEPTH))
 	args = parser.parse_args()
 	# We want to convert this from a Namespace to a dict and ignore the hidden attributes
@@ -118,7 +118,10 @@ def category_articles(category_name, excluded=[], depth=_DEPTH):
 			if cat_title not in excluded:
 				subcategories.append(cat_title)
 	for category in subcategories:
+		print "Found category: %s" % category
 		articles = articles + category_articles(category, excluded=excluded, depth=depth-1)
+	# Remove duplicates in articles
+	articles = [article for article in articles if articles.count(article)==1]
 	return articles
 
 def article_revisions(article, revision_properties=['ids', 'timestamp', 'user', 'userid', 'size']):
@@ -213,19 +216,16 @@ def clean_revision(rev):
 			revision['userid'] = revision['user']
 	return revision
 
-def main(categories, exclusions, depth=_DEPTH, testing=False):
-	if not testing:
-		args = parse_arguments()
-		categories = args['category_file'].readlines()
-		args['category_file'].close()
-		exclusions = args['exclude_file'].readlines()
-		args['exclude_file'].close()
-		for i,cat in enumerate(categories):
-			categories[i] = cat.rstrip().lstrip().decode(_ENCODING)
-		exclusions = [ex.rstrip().lstrip().decode(_ENCODING) for ex in exclusions]
-		depth = args['depth']
-	if testing:		
-		all_revisions = []
+def main():
+	args = parse_arguments()
+	with args['category_file'] as f:
+		categories = f.readlines()
+	with args['exclude_file'] as f:
+		exclusions = f.readlines()
+	categories = [cat.rstrip().lstrip().decode(_ENCODING) for cat in categories]
+	exclusions = [ex.rstrip().decode(_ENCODING) for ex in exclusions]
+	depth = args['depth']
+
 	for category in categories:
 		print '%s' % (category.encode(_ENCODING))
 		output_filename = category.encode(_ENCODING).replace(':', '-') + '.csv'
@@ -236,21 +236,9 @@ def main(categories, exclusions, depth=_DEPTH, testing=False):
 		# Check for bad 'user'/'userid' values and correct them
 		for i in xrange(len(revisions)):
 			revisions[i] = clean_revision(revisions[i])
-		if testing:
-			all_revisions += revisions
 		with codecs.open(output_filename, 'w', _ENCODING) as output_file:
 		 	# Rollin' up my sleeves and writing my own CSV outputter thingy
 		 	write_csv(revisions, _FIELDORDER, output_file, all_fields=True)
-	if testing:
-		return all_revisions
-
-def test():
-	articles = category_articles('Category:2001_fires')
-	r = []
-	for a in articles:
-		r += article_revisions(a)
-	pp([(rev['user'], rev['userid'], is_ip(rev['user'])) for rev in r[:10]])
-	return r
 
 if __name__=="__main__":
 	main()
