@@ -4,7 +4,12 @@ from sqlalchemy.ext.declarative import declarative_base
 import simplejson
 import requests
 
-pageids = {28486453: 'http://en.wikipedia.org/w/index.php?title=2010_Copiap%C3%B3_mining_accident',
+# How many revisions are returned by each API call
+# Keep this at 1 due to https://bugzilla.wikimedia.org/show_bug.cgi?id=29223
+rvlimit=1
+
+pageids = {\
+28486453: 'http://en.wikipedia.org/w/index.php?title=2010_Copiap%C3%B3_mining_accident',
 27046954: 'http://en.wikipedia.org/wiki/Deepwater_Horizon_oil_spill',
 25804468: 'http://en.wikipedia.org/wiki/2010_Haiti_earthquake',
 31150160: 'http://en.wikipedia.org/wiki/2011_T%C5%8Dhoku_earthquake_and_tsunami',
@@ -42,7 +47,7 @@ def store_revisions(revs_json, pageid):
 	# Up to ['query']['pages']
 	page_info = revs_json[str(pageid)]
 	if 'revisions' not in page_info:
-		return 0
+		return False
 	for revision in page_info['revisions']:
 		revid = revision['revid']
 		parentid = revision['parentid']
@@ -57,24 +62,46 @@ def store_revisions(revs_json, pageid):
 		diff = revision['diff']['*'])
 		if len(find_revision(revid, pageid)) == 0:
 			session.add(revobj)
+			print 'Added revid=%d for pageid=%d.'%(revid,pageid)
 		else:
 			print 'pageid=%d,revid=%d already exists in database, skipping.'%(pageid, revid)
-	return parentid
+	return True
 
 def get_revisions(revid, pageid):
-	request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids%7Ctimestamp%7Cuser%7Cuserid%7Ccomment%7Ccontent&rvlimit=10&rvdiffto=prev&rvstartid='+str(revid)+'&pageids='+str(pageid)
+	request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids%7Ctimestamp%7Cuser%7Cuserid%7Ccomment%7Ccontent&rvlimit='+str(rvlimit)+'&rvdiffto=prev&rvstartid='+str(revid)+'&pageids='+str(pageid)
 	r = requests.get(request)
 	sj = simplejson.loads(r.text)
 	results = sj['query']['pages']
 	return results
 
+def get_revids(pageid):
+	revids = list()
+	first_request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids&rvlimit=500&pageids='+str(pageid)
+	r = requests.get(first_request)
+	sj = simplejson.loads(r.text)
+	revs = sj['query']['pages'][str(pageid)]['revisions']
+	revids += [rev['revid'] for rev in revs]
+	revid_next = revs[-1]['parentid']
+	while revid_next > 0:
+		request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids&rvlimit=500&rvdiffto=prev&rvstartid='+str(revid_next)+'&pageids='+str(pageid)
+		r = requests.get(request)
+		sj = simplejson.loads(r.text)
+		revs = sj['query']['pages'][str(pageid)]['revisions']
+		revids += [rev['revid'] for rev in revs]
+		revid_next = revs[-1]['parentid']
+	return revids
+
 if __name__=="__main__":
 	for pageid in pageids:
-		first_request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids%7Ctimestamp%7Cuser%7Cuserid%7Ccomment%7Ccontent&rvlimit=1&rvdiffto=prev&pageids='+str(pageid)
-		r = requests.get(first_request)
-		sj = simplejson.loads(r.text)
-		next_revid = store_revisions(sj['query']['pages'], pageid)
-		while next_revid != 0:
-			revisions = get_revisions(next_revid, pageid)
-			next_revid = store_revisions(revisions, pageid)
-			session.commit()
+		revids = get_revids(pageid)
+		print 'Got %d revision IDs for pageid %d.' % (len(revids), pageid)
+		for revid in revids:
+			if len(find_revision(revid, pageid)) > 0:
+				# We already got this revision, skip the rest
+				print 'revid %d for pageid %d already in database, skipping...' % (revid, pageid)
+				continue
+			request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids%7Ctimestamp%7Cuser%7Cuserid%7Ccomment%7Ccontent&rvlimit='+str(rvlimit)+'&rvdiffto=prev&rvstartid='+str(revid)+'&pageids='+str(pageid)
+			revisions = get_revisions(revid, pageid)
+			if not store_revisions(revisions, pageid):
+				print 'Error storing revision with revid %d for pageid %d!' % (revid, pageid)
+		session.commit()
