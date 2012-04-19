@@ -51,10 +51,10 @@ def store_revision(rev_json):
 		timestamp = rev['timestamp'],
 		comment = rev['comment'],
 		diff = rev['diff']['*'])
-	if len(find_revision(rev['revid'], page_id)) == 0:
+	if len(find_revision(rev['revid'], int(page_id))) == 0:
 		session.add(revision)
 	else:
-		print 'pageid=%d,revid=%d already exists in database, skipping.'%(page_id, rev['revid'])
+		print 'pageid=%d,revid=%d already exists in database, skipping.'%(int(page_id), rev['revid'])
 	return rev['parentid']
 
 def get_revision(revid, pageid):
