@@ -18,6 +18,8 @@ pageids = {\
 168079: 'http://en.wikipedia.org/wiki/2010_FIFA_World_Cup',
 2401717: 'http://en.wikipedia.org/wiki/Super_Bowl_XLV'}
 
+# For running on sonicserver:
+#engine = create_engine('mysql://wikirevs:5U5557f5LqmAG2s@localhost:3306/wikipedia_revisions', echo=False)
 engine = create_engine('mysql://wiki:pedia@localhost:3306/wikipedia', echo=False)
 Base = declarative_base(engine)
 
@@ -39,10 +41,6 @@ metadata = Base.metadata
 Session = sessionmaker(bind=engine)
 session = Session()
 
-def find_revision(revid, pageid):
-	q = session.query(Revision).filter(Revision.pageid==pageid).filter(Revision.revid==revid)
-	return q.all()
-
 def store_revisions(revs_json, pageid):
 	# Up to ['query']['pages']
 	page_info = revs_json[str(pageid)]
@@ -50,21 +48,18 @@ def store_revisions(revs_json, pageid):
 		return False
 	for revision in page_info['revisions']:
 		revid = revision['revid']
-		parentid = revision['parentid']
+		parentid = revision.get('parentid', -1)
+
 		revobj = Revision(pageid = pageid,
-		article_title = page_info['title'],
-		editor_id = revision['userid'],
-		editor_name = revision['user'],
-		revid = revid,
-		parentid = parentid,
-		timestamp = revision['timestamp'],
-		comment = revision.get('comment', ''),
-		diff = revision['diff']['*'])
-		if len(find_revision(revid, pageid)) == 0:
-			session.add(revobj)
-			print 'Added revid=%d for pageid=%d.'%(revid,pageid)
-		else:
-			print 'pageid=%d,revid=%d already exists in database, skipping.'%(pageid, revid)
+							article_title = page_info['title'],
+							editor_id = revision.get('userid',-1),
+							editor_name = revision.get('user','userhidden'),
+							revid = revid,
+							parentid = parentid,
+							timestamp = revision['timestamp'],
+							comment = revision.get('comment', ''),
+							diff = revision['diff']['*'])
+		session.add(revobj)
 	return True
 
 def get_revisions(revid, pageid):
@@ -82,7 +77,7 @@ def get_revids(pageid):
 	revs = sj['query']['pages'][str(pageid)]['revisions']
 	revids += [rev['revid'] for rev in revs]
 	revid_next = revs[-1]['parentid']
-	while revid_next > 0:
+	while 'parentid' in revs[-1] and revid_next > 0:
 		request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids&rvlimit=500&rvdiffto=prev&rvstartid='+str(revid_next)+'&pageids='+str(pageid)
 		r = requests.get(request)
 		sj = simplejson.loads(r.text)
@@ -94,12 +89,12 @@ def get_revids(pageid):
 if __name__=="__main__":
 	for pageid in pageids:
 		revids = get_revids(pageid)
-		print 'Got %d revision IDs for pageid %d.' % (len(revids), pageid)
+		print 'There are %d revisions for pageid %d.' % (len(revids), pageid)
+		revids_stored = session.query(Revision.revid).filter(Revision.pageid==pageid).all()
+		revids_stored = [r[0] for r in revids_stored]
+		revids = set(revids).symmetric_difference(set(revids_stored))
+		print '%d revisions are already in the database, working on %d more.' % (len(revids_stored), len(revids))	
 		for revid in revids:
-			if len(find_revision(revid, pageid)) > 0:
-				# We already got this revision, skip the rest
-				print 'revid %d for pageid %d already in database, skipping...' % (revid, pageid)
-				continue
 			request = 'http://en.wikipedia.org/w/api.php?action=query&prop=revisions&format=json&rvprop=ids%7Ctimestamp%7Cuser%7Cuserid%7Ccomment%7Ccontent&rvlimit='+str(rvlimit)+'&rvdiffto=prev&rvstartid='+str(revid)+'&pageids='+str(pageid)
 			revisions = get_revisions(revid, pageid)
 			if not store_revisions(revisions, pageid):
